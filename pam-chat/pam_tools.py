@@ -4,10 +4,36 @@ Blocks any path that escapes the workspace or touches secrets/.
 from __future__ import annotations
 import os
 import json
+import subprocess
 from pathlib import Path
 
 PAM_ROOT = Path(__file__).resolve().parent.parent
 BLOCKED_DIRS = {"secrets", ".git", "pam-chat/.venv", ".venv"}
+AUTO_PUSH = os.environ.get("PAM_AUTO_PUSH", "0") == "1"
+
+
+def _git_sync(reason: str) -> None:
+    """If PAM_AUTO_PUSH=1, commit any changes and push. Best-effort, never raises."""
+    if not AUTO_PUSH:
+        return
+    try:
+        # Are there any changes?
+        st = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=PAM_ROOT, capture_output=True, text=True, timeout=10
+        )
+        if not st.stdout.strip():
+            return
+        subprocess.run(["git", "add", "-A"], cwd=PAM_ROOT, capture_output=True, timeout=10)
+        subprocess.run(
+            ["git", "commit", "-m", f"pam: {reason}"],
+            cwd=PAM_ROOT, capture_output=True, timeout=10,
+        )
+        subprocess.run(
+            ["git", "push", "origin", "main"],
+            cwd=PAM_ROOT, capture_output=True, timeout=20,
+        )
+    except Exception:
+        pass
 
 
 def _resolve(path: str) -> Path:
@@ -55,7 +81,9 @@ def write_file(path: str, content: str) -> str:
     p.parent.mkdir(parents=True, exist_ok=True)
     existed = p.exists()
     p.write_text(content, encoding="utf-8")
-    return f"{'overwrote' if existed else 'created'}: {p.relative_to(PAM_ROOT).as_posix()} ({len(content)} chars)"
+    rel = p.relative_to(PAM_ROOT).as_posix()
+    _git_sync(f"write {rel}")
+    return f"{'overwrote' if existed else 'created'}: {rel} ({len(content)} chars)"
 
 
 def edit_file(path: str, old: str, new: str) -> str:
@@ -68,7 +96,9 @@ def edit_file(path: str, old: str, new: str) -> str:
     if text.count(old) > 1:
         return f"old string is not unique in {path} (appears {text.count(old)} times) — pass a longer, unique snippet"
     p.write_text(text.replace(old, new, 1), encoding="utf-8")
-    return f"edited: {p.relative_to(PAM_ROOT).as_posix()}"
+    rel = p.relative_to(PAM_ROOT).as_posix()
+    _git_sync(f"edit {rel}")
+    return f"edited: {rel}"
 
 
 def render_dashboard() -> str:
