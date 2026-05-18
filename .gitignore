@@ -6,6 +6,7 @@ secrets/
 # Local-only state
 pam-chat/history.jsonl
 pam-chat/.venv/
+drafts/
 __pycache__/
 *.pyc
 

@@ -1,13 +1,17 @@
 """Filesystem tools Pam can call. Sandboxed to the PAM workspace root.
-Blocks any path that escapes the workspace or touches secrets/.
+
+Default safety: edits land in drafts/<original-path>, not the live file.
+Glenn explicitly says "go" / "commit" → Pam calls commit_drafts() to promote them.
 """
 from __future__ import annotations
 import os
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
 PAM_ROOT = Path(__file__).resolve().parent.parent
+DRAFTS_DIR = PAM_ROOT / "drafts"
 BLOCKED_DIRS = {"secrets", ".git", "pam-chat/.venv", ".venv"}
 AUTO_PUSH = os.environ.get("PAM_AUTO_PUSH", "0") == "1"
 
@@ -17,7 +21,6 @@ def _git_sync(reason: str) -> None:
     if not AUTO_PUSH:
         return
     try:
-        # Are there any changes?
         st = subprocess.run(
             ["git", "status", "--porcelain"], cwd=PAM_ROOT, capture_output=True, text=True, timeout=10
         )
@@ -49,6 +52,14 @@ def _resolve(path: str) -> Path:
     return p
 
 
+def _draft_path_for(real: Path) -> Path:
+    """Where the draft of `real` lives — drafts/<relative path under PAM_ROOT>."""
+    rel = real.relative_to(PAM_ROOT)
+    return DRAFTS_DIR / rel
+
+
+# ---------- read-only tools ----------
+
 def list_files(path: str = ".") -> str:
     p = _resolve(path)
     if not p.exists():
@@ -76,39 +87,98 @@ def read_file(path: str) -> str:
         return f"binary file, cannot read as text: {path}"
 
 
-def write_file(path: str, content: str) -> str:
-    p = _resolve(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    existed = p.exists()
-    p.write_text(content, encoding="utf-8")
-    rel = p.relative_to(PAM_ROOT).as_posix()
-    _git_sync(f"write {rel}")
-    return f"{'overwrote' if existed else 'created'}: {rel} ({len(content)} chars)"
+# ---------- draft-by-default writes ----------
+
+def propose_change(path: str, content: str) -> str:
+    """Stage a proposed full-file overwrite or new file under drafts/."""
+    real = _resolve(path)
+    if DRAFTS_DIR in real.parents or real == DRAFTS_DIR:
+        return "don't write directly inside drafts/ — pass the real target path"
+    draft = _draft_path_for(real)
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_text(content, encoding="utf-8")
+    rel = real.relative_to(PAM_ROOT).as_posix()
+    return f"DRAFTED: drafts/{rel} ({len(content)} chars). Not live yet — Glenn must say 'go' to commit."
 
 
-def edit_file(path: str, old: str, new: str) -> str:
-    p = _resolve(path)
-    if not p.exists():
+def propose_edit(path: str, old: str, new: str) -> str:
+    """Stage a snippet replacement under drafts/. Uses the current draft if one exists, otherwise the live file."""
+    real = _resolve(path)
+    if DRAFTS_DIR in real.parents:
+        return "don't edit drafts/ directly — pass the real target path"
+    draft = _draft_path_for(real)
+    source = draft if draft.exists() else real
+    if not source.exists():
         return f"not found: {path}"
-    text = p.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8")
     if old not in text:
         return f"old string not found in {path}"
     if text.count(old) > 1:
         return f"old string is not unique in {path} (appears {text.count(old)} times) — pass a longer, unique snippet"
-    p.write_text(text.replace(old, new, 1), encoding="utf-8")
-    rel = p.relative_to(PAM_ROOT).as_posix()
-    _git_sync(f"edit {rel}")
-    return f"edited: {rel}"
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_text(text.replace(old, new, 1), encoding="utf-8")
+    rel = real.relative_to(PAM_ROOT).as_posix()
+    return f"DRAFTED edit: drafts/{rel}. Not live yet — Glenn must say 'go' to commit."
+
+
+def list_drafts() -> str:
+    if not DRAFTS_DIR.exists():
+        return "no drafts pending"
+    items = []
+    for p in sorted(DRAFTS_DIR.rglob("*")):
+        if p.is_file():
+            rel = p.relative_to(DRAFTS_DIR).as_posix()
+            size = p.stat().st_size
+            items.append(f"{rel}  ({size} bytes)")
+    return "\n".join(items) if items else "no drafts pending"
+
+
+def show_draft(path: str) -> str:
+    """Show the content of a single draft (path is the REAL target path, not the drafts/ path)."""
+    real = _resolve(path)
+    draft = _draft_path_for(real)
+    if not draft.exists():
+        return f"no draft for {path}"
+    return draft.read_text(encoding="utf-8")
+
+
+def commit_drafts() -> str:
+    """Promote all files in drafts/ to their real locations, then clear drafts/."""
+    if not DRAFTS_DIR.exists():
+        return "no drafts to commit"
+    promoted: list[str] = []
+    for draft in sorted(DRAFTS_DIR.rglob("*")):
+        if not draft.is_file():
+            continue
+        rel = draft.relative_to(DRAFTS_DIR)
+        target = PAM_ROOT / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(draft, target)
+        promoted.append(rel.as_posix())
+    # Clear drafts after promoting
+    shutil.rmtree(DRAFTS_DIR, ignore_errors=True)
+    if not promoted:
+        return "no drafts to commit"
+    _git_sync(f"commit {len(promoted)} draft(s): {', '.join(promoted[:3])}{'...' if len(promoted) > 3 else ''}")
+    return "COMMITTED LIVE:\n" + "\n".join(f"  → {p}" for p in promoted)
+
+
+def discard_drafts() -> str:
+    if not DRAFTS_DIR.exists():
+        return "no drafts to discard"
+    shutil.rmtree(DRAFTS_DIR, ignore_errors=True)
+    return "discarded all drafts"
 
 
 def render_dashboard() -> str:
-    """Regenerate dashboard.html from dashboard/*.md."""
+    """Regenerate dashboard.html from dashboard/*.md (live files only — drafts not included)."""
     from render_dashboard import render
     out = render()
     return f"rendered dashboard.html ({out} bytes)"
 
 
-# OpenRouter / OpenAI-format tool schemas
+# ---------- tool schemas (OpenAI / OpenRouter format) ----------
+
 TOOL_SCHEMAS = [
     {
         "type": "function",
@@ -126,7 +196,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a text file from the PAM workspace.",
+            "description": "Read a text file from the PAM workspace (live version).",
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
@@ -137,12 +207,12 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "write_file",
-            "description": "Create or overwrite a file in the PAM workspace. Use for new files or full rewrites.",
+            "name": "propose_change",
+            "description": "Stage a NEW file or a FULL-FILE rewrite under drafts/. Use this for any change that hasn't been pre-approved. The change is NOT live until commit_drafts is called.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string"},
+                    "path": {"type": "string", "description": "Real target path under PAM root (NOT drafts/...)."},
                     "content": {"type": "string"},
                 },
                 "required": ["path", "content"],
@@ -152,13 +222,13 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "edit_file",
-            "description": "Replace one unique snippet in an existing file. Prefer this for small changes.",
+            "name": "propose_edit",
+            "description": "Stage a single unique-snippet replacement under drafts/. Builds on top of any existing draft for the same file. NOT live until commit_drafts.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string"},
-                    "old": {"type": "string", "description": "Exact unique string to replace."},
+                    "path": {"type": "string", "description": "Real target path."},
+                    "old": {"type": "string"},
                     "new": {"type": "string"},
                 },
                 "required": ["path", "old", "new"],
@@ -168,8 +238,44 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "list_drafts",
+            "description": "List all files currently staged in drafts/.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "show_draft",
+            "description": "Show the full contents of a single pending draft (pass the real target path).",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "commit_drafts",
+            "description": "Promote ALL drafts to their live target paths. Only call this when Glenn explicitly says 'go', 'commit', 'ship it', or similar approval.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "discard_drafts",
+            "description": "Throw away all pending drafts. Only call when Glenn explicitly rejects them.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "render_dashboard",
-            "description": "Regenerate dashboard.html from dashboard/*.md. Run after editing any dashboard file.",
+            "description": "Regenerate dashboard.html from dashboard/*.md. Run after commit_drafts if any dashboard file changed.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -178,8 +284,12 @@ TOOL_SCHEMAS = [
 DISPATCH = {
     "list_files": list_files,
     "read_file": read_file,
-    "write_file": write_file,
-    "edit_file": edit_file,
+    "propose_change": propose_change,
+    "propose_edit": propose_edit,
+    "list_drafts": list_drafts,
+    "show_draft": show_draft,
+    "commit_drafts": commit_drafts,
+    "discard_drafts": discard_drafts,
     "render_dashboard": render_dashboard,
 }
 
@@ -192,3 +302,17 @@ def call(name: str, args: dict) -> str:
         return fn(**args)
     except Exception as e:
         return f"error in {name}: {e}"
+
+
+# ---------- HTTP endpoint helpers (read by server.py) ----------
+
+def drafts_summary() -> list[dict]:
+    """Lightweight summary of pending drafts for the UI."""
+    if not DRAFTS_DIR.exists():
+        return []
+    out = []
+    for p in sorted(DRAFTS_DIR.rglob("*")):
+        if p.is_file():
+            rel = p.relative_to(DRAFTS_DIR).as_posix()
+            out.append({"path": rel, "bytes": p.stat().st_size})
+    return out

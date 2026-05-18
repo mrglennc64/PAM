@@ -25,7 +25,7 @@ HERE = Path(__file__).resolve().parent
 PAM_ROOT = HERE.parent
 
 sys.path.insert(0, str(HERE))
-from pam_tools import TOOL_SCHEMAS, call as call_tool  # noqa: E402
+from pam_tools import TOOL_SCHEMAS, call as call_tool, drafts_summary  # noqa: E402
 from render_dashboard import render as render_dashboard  # noqa: E402
 
 
@@ -75,14 +75,26 @@ def build_system_prompt() -> str:
             parts.append(f"\n## dashboard/{f.name}\n" + f.read_text(encoding="utf-8"))
 
     parts.append(
-        "\n# How you work\n"
-        "- You have file tools (list_files, read_file, write_file, edit_file, render_dashboard). "
-        "Use them to actually update PAM files when Glenn tells you something. Don't just acknowledge — act.\n"
-        "- After editing any dashboard/ file, call render_dashboard.\n"
-        "- Keep replies short and direct, no metaphors, no hype.\n"
+        "\n# How you work — DRAFT-FIRST WORKFLOW (read this carefully)\n"
+        "You have tools but you do NOT edit live files directly. The flow is:\n"
+        "  1. Glenn tells you something or asks for a change.\n"
+        "  2. You decide which file(s) need updating and call `propose_change` (full file) or "
+        "`propose_edit` (one snippet). These go into drafts/<path>, NOT live.\n"
+        "  3. End your reply with a short summary: which drafts you wrote and what they contain. "
+        "Then say: 'Say `go` when you want me to commit these live.'\n"
+        "  4. When Glenn replies 'go', 'commit', 'ship it', 'do it' or similar explicit approval, "
+        "call `commit_drafts` to promote everything to live, then `render_dashboard` if any "
+        "dashboard/ file changed.\n"
+        "  5. If Glenn rejects ('no', 'cancel', 'discard'), call `discard_drafts`.\n"
+        "\n"
+        "Other rules:\n"
+        "- NEVER call commit_drafts unless Glenn just gave clear approval. 'thanks' or 'ok' alone "
+        "is not approval — wait for 'go' / 'commit' / 'ship it' / 'do it'.\n"
+        "- Use `list_drafts` and `show_draft` if Glenn asks what's pending.\n"
+        "- Keep replies short and direct. No metaphors, no hype, no value-words.\n"
+        "- For external actions (email, scheduling, payments), draft text only — do not send.\n"
         "- When Glenn shares info (a deadline, a meeting, a number), figure out which file it belongs in "
-        "and update it. Confirm with one line what you did.\n"
-        "- For external actions (sending email, scheduling, paying), draft only — don't send.\n"
+        "and propose the change. Don't just acknowledge — propose.\n"
     )
     return "\n".join(parts)
 
@@ -219,6 +231,23 @@ def reset() -> dict:
 def get_history() -> JSONResponse:
     msgs = [m for m in load_history() if m.get("role") in ("user", "assistant") and m.get("content")]
     return JSONResponse(msgs)
+
+
+@app.get("/drafts")
+def drafts() -> JSONResponse:
+    return JSONResponse(drafts_summary())
+
+
+@app.get("/drafts/{path:path}")
+def draft_content(path: str) -> JSONResponse:
+    from pam_tools import DRAFTS_DIR
+    p = DRAFTS_DIR / path
+    if not p.exists() or not p.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        return JSONResponse({"path": path, "content": p.read_text(encoding="utf-8")})
+    except UnicodeDecodeError:
+        return JSONResponse({"error": "binary file"}, status_code=415)
 
 
 @app.get("/")

@@ -71,6 +71,11 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   </div>
   <div class="side">
     <div>
+      <h2>Pending drafts</h2>
+      <div class="tool-log" id="drafts"><span class="empty">no drafts yet</span></div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted);">Say <code style="background:#0d1117;padding:1px 4px;border-radius:3px;">go</code> to commit, <code style="background:#0d1117;padding:1px 4px;border-radius:3px;">discard</code> to throw away.</div>
+    </div>
+    <div>
       <h2>Recent actions</h2>
       <div class="tool-log" id="toollog"><span class="empty">no actions yet</span></div>
     </div>
@@ -88,6 +93,7 @@ const sendBtn = document.getElementById('send');
 const resetBtn = document.getElementById('reset');
 const metaEl = document.getElementById('meta');
 const toolLogEl = document.getElementById('toollog');
+const draftsEl = document.getElementById('drafts');
 
 function addMsg(role, text) {
   const div = document.createElement('div');
@@ -121,6 +127,32 @@ function appendToolLog(lines) {
   toolLogEl.scrollTop = toolLogEl.scrollHeight;
 }
 
+async function refreshDrafts() {
+  try {
+    const r = await fetch('/drafts');
+    const items = await r.json();
+    if (!items.length) {
+      draftsEl.innerHTML = '<span class="empty">no drafts yet</span>';
+      return;
+    }
+    draftsEl.innerHTML = '';
+    for (const it of items) {
+      const div = document.createElement('div');
+      div.className = 'line';
+      div.style.cursor = 'pointer';
+      div.title = 'click to view draft';
+      div.textContent = `${it.path}  (${it.bytes} b)`;
+      div.onclick = async () => {
+        const r2 = await fetch('/drafts/' + encodeURIComponent(it.path));
+        if (!r2.ok) return;
+        const d = await r2.json();
+        alert(`drafts/${d.path}\n\n` + d.content);
+      };
+      draftsEl.appendChild(div);
+    }
+  } catch {}
+}
+
 async function send() {
   const text = inputEl.value.trim();
   if (!text) return;
@@ -137,6 +169,7 @@ async function send() {
     addMsg('pam', data.reply || '(no reply)');
     appendToolLog(data.tool_log);
     if (data.model) metaEl.textContent = data.model;
+    refreshDrafts();
   } catch (e) {
     addMsg('pam', '[network error] ' + e.message);
   } finally {
@@ -164,6 +197,7 @@ resetBtn.onclick = async () => {
     const msgs = await r.json();
     for (const m of msgs) addMsg(m.role === 'user' ? 'user' : 'pam', m.content);
   } catch {}
+  refreshDrafts();
   inputEl.focus();
 })();
 </script>
