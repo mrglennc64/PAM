@@ -1,0 +1,18 @@
+[submodule "everything-claude-code"]
+	path = everything-claude-code
+	url = https://github.com/affaan-m/everything-claude-code.git
+[submodule "Obsidian-CLI-skill"]
+	path = Obsidian-CLI-skill
+	url = https://github.com/pablo-mano/Obsidian-CLI-skill.git
+[submodule "andrej-karpathy-skills"]
+	path = andrej-karpathy-skills
+	url = https://github.com/multica-ai/andrej-karpathy-skills.git
+[submodule "superpowers"]
+	path = superpowers
+	url = https://github.com/obra/superpowers.git
+[submodule "ruflo"]
+	path = ruflo
+	url = https://github.com/ruvnet/ruflo.git
+[submodule "open-design"]
+	path = open-design
+	url = https://github.com/nexu-io/open-design.git
