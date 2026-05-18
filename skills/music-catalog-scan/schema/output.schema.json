@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiscrepancyRecord",
+  "type": "object",
+  "required": ["row_id", "severity", "category", "field", "confidence", "requires_human_review"],
+  "properties": {
+    "row_id": {"type": "string"},
+    "severity": {"type": "string", "enum": ["error", "warning", "info"]},
+    "category": {
+      "type": "string",
+      "enum": [
+        "missing_isrc",
+        "missing_iswc",
+        "split_sum_mismatch",
+        "duplicate",
+        "reference_mismatch",
+        "role_conflict",
+        "invalid_format"
+      ]
+    },
+    "field": {"type": "string"},
+    "observed": {"type": ["string", "number", "null"]},
+    "expected": {"type": "string"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "suggested_action": {"type": "string"},
+    "requires_human_review": {"type": "boolean"}
+  }
+}

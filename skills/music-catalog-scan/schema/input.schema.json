@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MusicCatalogRow",
+  "type": "object",
+  "required": ["track_id", "title", "artist"],
+  "properties": {
+    "track_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "artist": {"type": "string", "minLength": 1},
+    "isrc": {"type": "string", "pattern": "^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$"},
+    "iswc": {"type": "string", "pattern": "^T-?[0-9]{3}\\.?[0-9]{3}\\.?[0-9]{3}-?[0-9]$"},
+    "writers": {"type": "string"},
+    "writer_splits": {"type": "string"},
+    "publishers": {"type": "string"},
+    "publisher_splits": {"type": "string"},
+    "recording_year": {"type": ["integer", "string"]},
+    "society": {"type": "string", "enum": ["STIM", "ICE", "MLC", ""]}
+  }
+}

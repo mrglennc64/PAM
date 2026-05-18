@@ -1,0 +1,21 @@
+track_id,title,artist,isrc,iswc,writers,writer_splits,publishers,publisher_splits,recording_year,society
+T001,Norra Vinden,Astrid Lind,SEABC2400001,T-123.456.789-0,"Astrid Lind, Per Berg","60, 40","Lind Music, Berg Publishing","60, 40",2024,STIM
+T002,Stockholm Soul,Jonas Holm,SEABC2400002,T-234.567.890-1,Jonas Holm,100,Holm Records,100,2023,STIM
+T003,Midnight Train,The Northbound,,T-345.678.901-2,"Eva Strom, Karl Ek","50, 50","Northbound Music, Ek Songs","50, 50",2024,ICE
+T004,Glow,Mira Sand,SEABC2400004,,Mira Sand,90,Sand Music,100,2024,STIM
+T005,Glow,Mira Sand,SEABC2400004,T-456.789.012-3,Mira Sand,100,Sand Music,100,2024,STIM
+T006,Echoes of Malmö,Felix Vinter,SEABC2400006,T-567.890.123-4,"Felix Vinter, Anna Ros","60, 30","Vinter Tunes, Ros Publishing","60, 40",2023,STIM
+T007,Highway 18,Nils Berg Trio,USRC12400007,T-678.901.234-5,"Nils Berg, Hugo Lind, Sara Mo","34, 33, 33","Berg Music, Lind Songs, Mo Publishing","34, 33, 33",2024,MLC
+T008,Vintergatan,Klara Forsell,SEABC2400008,T-789.012.345-6,Klara Forsell,100,Forsell Music,100,2024,STIM
+T009,Tystnad,Erik Holm,XX12400009,T-890.123.456-7,Erik Holm,100,Holm Music,100,2024,STIM
+T010,Brutet Glas,Ida Strand,SEABC2400010,T-901.234.567-8,"Ida Strand, Tore Lund","70, 30","Strand Records, Lund Publishing","70, 30",2024,STIM
+T011,Det Brinner,Oskar Berglund,SEABC2400011,T-012.345.678-9,Oskar Berglund,100,Berglund Music,100,2023,STIM
+T012,Ingen Annan,Lina Krogh,SEABC2400012,T-123.456.780-1,"Lina Krogh, Per Lund","55, 45","Krogh Music, Lund Songs","55, 45",2024,STIM
+T013,Höstljus,Anders Vik,SEABC2400013,T-234.567.801-2,Anders Vik,100,Vik Publishing,100,2022,STIM
+T014,Stillhet,Maja Eklund,SEABC2400014,T-345.678.012-3,"Maja Eklund, Nils Folk","60, 40","Eklund Music, Folk Records","60, 40",2024,STIM
+T015,Fågelflykt,Tor Lind,SEABC2400015,T-456.780.123-4,Tor Lind,100,Lind Music,100,2024,STIM
+T016,Vågor,Sara Almgren,SEABC2400016,T-567.801.234-5,"Sara Almgren, Eva Berg","50, 50","Almgren Music, Berg Publishing","50, 50",2024,STIM
+T017,Spår,Henrik Mo,SEABC2400017,T-678.012.345-6,Henrik Mo,100,Mo Music,100,2023,STIM
+T018,Eldsjäl,Frida Holm,SEABC2400018,T-789.012.346-7,"Frida Holm, Karl Vik","50, 50","Holm Records, Vik Songs","50, 50",2024,STIM
+T019,Norrsken,Lukas Forss,SEABC2400019,T-890.123.457-8,Lukas Forss,100,Forss Music,100,2024,STIM
+T020,Snöfall,Greta Berg,SEABC2400020,T-901.234.568-9,Greta Berg,100,Berg Publishing,100,2024,STIM

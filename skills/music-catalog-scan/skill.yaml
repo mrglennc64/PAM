@@ -1,0 +1,28 @@
+name: music-catalog-scan
+version: 0.1.0
+owner_agent: Worker-Agent
+description: Scan local music-rights catalog exports for ISRC/ISWC gaps, role-split errors, duplicates, and reference mismatches against local STIM/ICE/MLC exports.
+
+inputs:
+  - type: file
+    formats: [csv, xlsx]
+    path_glob: /opt/ai-agency/music-catalog/inbox/*.{csv,xlsx}
+
+outputs:
+  - type: file
+    format: jsonl
+    path: /opt/ai-agency/music-catalog/outbox/
+
+entry_point:
+  command: /opt/ai-agency/hermes/venv/bin/python
+  args: ["/opt/ai-agency/skills/music-catalog-scan/scan.py", "--input", "{{input.path}}"]
+
+approval_required: true
+mutates_data: false
+external_calls: []
+
+constraints:
+  - read_only_input: true
+  - no_outbound_http_except: ["http://127.0.0.1:11434"]
+  - no_financial_calculations: true
+  - human_review_threshold: 0.85

@@ -1,0 +1,31 @@
+# Secrets — never commit
+secrets/
+*.env
+.env
+
+# Local-only state
+pam-chat/history.jsonl
+pam-chat/.venv/
+__pycache__/
+*.pyc
+
+# Generated artifacts (rebuilt on the server)
+dashboard.html
+
+# Large local-only assets — keep PAM repo small
+*.mp4
+*.mov
+Screenshot*.png
+*.png
+archive/
+
+# Reference submodules already point to upstream repos — they're metadata,
+# but binaries inside them shouldn't ship. Allow .gitmodules itself.
+!.gitmodules
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+node_modules/
