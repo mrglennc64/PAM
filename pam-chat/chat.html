@@ -12,7 +12,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-.app { display: grid; grid-template-columns: 1fr 280px; height: 100vh; }
+.app { display: grid; grid-template-columns: 1fr 320px; height: 100%; }
 .main { display: flex; flex-direction: column; min-width: 0; }
 .header { padding: 12px 20px; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between; }
@@ -22,7 +22,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 .header button:hover { color: var(--text); border-color: var(--accent); }
 .messages { flex: 1; overflow-y: auto; padding: 20px; }
-.msg { max-width: 760px; margin: 12px auto; padding: 12px 16px; border-radius: 8px;
+.msg { max-width: 720px; margin: 12px auto; padding: 12px 16px; border-radius: 8px;
   white-space: pre-wrap; word-wrap: break-word; line-height: 1.5; font-size: 14.5px; }
 .msg.user { background: var(--user); border-left: 3px solid var(--accent); }
 .msg.pam { background: var(--pam); border-left: 3px solid var(--success); }
@@ -99,7 +99,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     <div class="composer">
       <button id="upload-btn" title="Upload file (image, PDF, document)">📎</button>
       <input type="file" id="file-input" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.pdf,.txt,.md,.json,.csv,.py,.js,.ts,.html,.css,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,image/*,application/pdf,text/*">
-      <textarea id="input" placeholder="Type to Pam… (Enter = send, Shift+Enter = newline, paste images with Ctrl+V)"></textarea>
+      <textarea id="input" placeholder="Type to Pam… (Enter = send, Shift+Enter = newline)"></textarea>
       <button id="send">Send</button>
     </div>
   </div>
