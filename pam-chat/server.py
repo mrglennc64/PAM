@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import time
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -16,17 +17,18 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from openai import OpenAI
 from pydantic import BaseModel
 
 HERE = Path(__file__).resolve().parent
 PAM_ROOT = HERE.parent
+UPLOADS_DIR = PAM_ROOT / "uploads"
 
 sys.path.insert(0, str(HERE))
-from pam_tools import TOOL_SCHEMAS, call as call_tool, drafts_summary  # noqa: E402
-from render_dashboard import render as render_dashboard  # noqa: E402
+from pam_tools import TOOL_SCHEMAS, call as call_tool, drafts_summary
+from render_dashboard import render as render_dashboard
 
 
 # ---------- env loading ----------
@@ -88,13 +90,15 @@ def build_system_prompt() -> str:
         "  5. If Glenn rejects ('no', 'cancel', 'discard'), call `discard_drafts`.\n"
         "\n"
         "Other rules:\n"
-        "- NEVER call commit_drafts unless Glenn just gave clear approval. 'thanks' or 'ok' alone "
+        "- NEVER call commit_drafts unless Glenn gave clear approval. 'thanks' or 'ok' alone "
         "is not approval — wait for 'go' / 'commit' / 'ship it' / 'do it'.\n"
-        "- Use `list_drafts` and `show_draft` if Glenn asks what's pending.\n"
+        "- Use `list_files` and `show_draft` if Glenn asks what's pending.\n"
         "- Keep replies short and direct. No metaphors, no hype, no value-words.\n"
         "- For external actions (email, scheduling, payments), draft text only — do not send.\n"
         "- When Glenn shares info (a deadline, a meeting, a number), figure out which file it belongs in "
         "and propose the change. Don't just acknowledge — propose.\n"
+        "- Glenn can upload files (images, PDFs) via the chat UI. Uploaded files are saved to "
+        "PAM/uploads/. Use read_file() to read text files. For images, describe what you see.\n"
     )
     return "\n".join(parts)
 
@@ -137,7 +141,6 @@ def serializable_tool_calls(tool_calls) -> list[dict]:
 
 
 def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
-    """Run one user turn. Returns {'reply': str, 'tool_log': list[str]}."""
     history = load_history()
     history.append({"role": "user", "content": user_text})
     append_history({"role": "user", "content": user_text, "ts": time.time()})
@@ -250,6 +253,74 @@ def draft_content(path: str) -> JSONResponse:
         return JSONResponse({"error": "binary file"}, status_code=415)
 
 
+# ---------- upload endpoints ----------
+ALLOWED_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+    ".pdf", ".txt", ".md", ".json", ".csv", ".py", ".js", ".ts", ".html", ".css",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".zip", ".rar", ".7z",
+}
+MAX_FILE_SIZE = 25 * 1024 * 1024
+
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)) -> JSONResponse:
+    if not file.filename:
+        return JSONResponse({"error": "no filename"}, status_code=400)
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return JSONResponse({"error": f"file type '{ext}' not allowed"}, status_code=400)
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{int(time.time())}_{file.filename}"
+    dest = UPLOADS_DIR / safe_name
+    size = 0
+    with dest.open("wb") as buf:
+        while True:
+            chunk = await file.read(8192)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_FILE_SIZE:
+                dest.unlink(missing_ok=True)
+                return JSONResponse({"error": f"file too large (max 25 MB)"}, status_code=400)
+            buf.write(chunk)
+    return JSONResponse({
+        "ok": True,
+        "path": f"uploads/{safe_name}",
+        "filename": file.filename,
+        "saved_as": safe_name,
+        "size": size,
+    })
+
+
+@app.get("/uploads")
+def list_uploads() -> JSONResponse:
+    if not UPLOADS_DIR.exists():
+        return JSONResponse([])
+    items = []
+    for p in sorted(UPLOADS_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+        if p.is_file():
+            items.append({"name": p.name, "path": f"uploads/{p.name}", "size": p.stat().st_size})
+    return JSONResponse(items)
+
+
+@app.get("/uploads/{filename:path}")
+def serve_upload(filename: str) -> FileResponse:
+    p = UPLOADS_DIR / filename
+    if not p.exists() or not p.is_file():
+        raise HTTPException(404, "not found")
+    return FileResponse(p)
+
+
+@app.delete("/uploads/{filename:path}")
+def delete_upload(filename: str) -> JSONResponse:
+    p = UPLOADS_DIR / filename
+    if not p.exists() or not p.is_file():
+        raise HTTPException(404, "not found")
+    p.unlink()
+    return JSONResponse({"ok": True})
+
+
 @app.get("/")
 def root() -> FileResponse:
     return FileResponse(HERE / "chat.html")
@@ -263,11 +334,10 @@ def dashboard() -> FileResponse:
 
 if __name__ == "__main__":
     import uvicorn
-
     try:
         render_dashboard()
     except Exception as e:
         print(f"[warn] could not render dashboard: {e}")
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Pam online at http://localhost:{PORT}")
-    print(f"Model: {MODEL}  |  Fallback: {FALLBACK}")
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
