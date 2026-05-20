@@ -87,6 +87,62 @@ def read_file(path: str) -> str:
         return f"binary file, cannot read as text: {path}"
 
 
+def fetch_url(url: str, max_chars: int = 8000) -> str:
+    """Fetch a public web URL (website, GitHub page, etc.) and return title + cleaned text + links.
+
+    Note: LinkedIn profile pages and most authenticated pages will return a login wall, not the
+    underlying profile data. This tool only sees what an unauthenticated visitor sees.
+    """
+    if not url.startswith(("http://", "https://")):
+        return "url must start with http:// or https://"
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+    except ImportError as e:
+        return f"missing dependency: {e}. Install with: pip install requests beautifulsoup4"
+    try:
+        r = requests.get(
+            url,
+            timeout=15,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; PamBot/1.0)",
+                "Accept": "text/html,application/xhtml+xml,application/json,text/plain,*/*;q=0.8",
+            },
+            allow_redirects=True,
+        )
+    except requests.RequestException as e:
+        return f"fetch error: {e}"
+    ct = r.headers.get("content-type", "").lower()
+    parts = [f"URL: {r.url}", f"STATUS: {r.status_code}", f"TYPE: {ct}"]
+    if "html" in ct:
+        soup = BeautifulSoup(r.text, "html.parser")
+        title = soup.title.string.strip() if soup.title and soup.title.string else "(no title)"
+        for tag in soup(["script", "style", "noscript", "iframe", "svg", "header", "footer", "nav"]):
+            tag.decompose()
+        lines = [ln.strip() for ln in soup.get_text(separator="\n").splitlines()]
+        text = "\n".join(ln for ln in lines if ln)
+        links: list[str] = []
+        for a in soup.find_all("a", href=True):
+            label = (a.get_text() or "").strip()[:80]
+            href = a["href"]
+            if href.startswith("#") or href.startswith("javascript:"):
+                continue
+            links.append(f"  - {label or '(no text)'} → {href}")
+            if len(links) >= 25:
+                break
+        parts.append(f"TITLE: {title}")
+        body = text if len(text) <= max_chars else text[:max_chars] + f"\n…[truncated, total {len(text)} chars]"
+        parts.append("\nCONTENT:\n" + body)
+        if links:
+            parts.append("\nLINKS (first " + str(len(links)) + "):\n" + "\n".join(links))
+    else:
+        body = r.text[:max_chars]
+        if len(r.text) > max_chars:
+            body += f"\n…[truncated, total {len(r.text)} chars]"
+        parts.append("\nCONTENT:\n" + body)
+    return "\n".join(parts)
+
+
 # ---------- draft-by-default writes ----------
 
 def propose_change(path: str, content: str) -> str:
@@ -207,6 +263,21 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "fetch_url",
+            "description": "Fetch a public web page (website, GitHub README, blog post, company page, etc.) and return its title, cleaned text, and outgoing links. Use this when Glenn asks Pam to look at a URL or research something online. Note: LinkedIn profiles and other login-gated pages will only return a login wall.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Full URL starting with http:// or https://"},
+                    "max_chars": {"type": "integer", "description": "Max chars of body text to return (default 8000)."},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_change",
             "description": "Stage a NEW file or a FULL-FILE rewrite under drafts/. Use this for any change that hasn't been pre-approved. The change is NOT live until commit_drafts is called.",
             "parameters": {
@@ -284,6 +355,7 @@ TOOL_SCHEMAS = [
 DISPATCH = {
     "list_files": list_files,
     "read_file": read_file,
+    "fetch_url": fetch_url,
     "propose_change": propose_change,
     "propose_edit": propose_edit,
     "list_drafts": list_drafts,

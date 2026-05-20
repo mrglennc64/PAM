@@ -99,6 +99,9 @@ def build_system_prompt() -> str:
         "and propose the change. Don't just acknowledge — propose.\n"
         "- Glenn can upload files (images, PDFs) via the chat UI. Uploaded files are saved to "
         "PAM/uploads/. Use read_file() to read text files. For images, describe what you see.\n"
+        "- Use `fetch_url(url)` when Glenn asks you to look at a website, GitHub repo, blog post, "
+        "or any public web page. LinkedIn profiles are login-gated — fetch_url will only see the "
+        "login wall, not the profile content. Say so if Glenn asks for a LinkedIn URL.\n"
     )
     return "\n".join(parts)
 
