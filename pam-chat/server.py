@@ -173,6 +173,15 @@ def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
                     continue
             return {"reply": f"[error] {err[:300]}", "tool_log": tool_log}
 
+        if not getattr(resp, "choices", None):
+            err_obj = getattr(resp, "error", None) or getattr(resp, "model_extra", {}).get("error")
+            err = str(err_obj) if err_obj else "upstream returned no choices"
+            if model_used != FALLBACK:
+                tool_log.append(f"empty response from {model_used} ({err[:80]}), switching to {FALLBACK}")
+                model_used = FALLBACK
+                continue
+            return {"reply": f"[upstream error] {err[:300]}", "tool_log": tool_log}
+
         msg = resp.choices[0].message
         tool_calls = msg.tool_calls or []
 
