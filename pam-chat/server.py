@@ -47,7 +47,12 @@ def load_env() -> None:
 load_env()
 API_KEY = os.environ.get("OPENROUTER_API_KEY")
 MODEL = os.environ.get("PAM_MODEL", "openrouter/owl-alpha")
-FALLBACK = os.environ.get("PAM_FALLBACK_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+# PAM_FALLBACK_MODEL accepts a single model OR a comma-separated rotation list.
+# When the primary errors (429 / empty choices), we walk down this list within
+# the same turn. Each new turn starts at MODEL again.
+_FALLBACK_RAW = os.environ.get("PAM_FALLBACK_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+FALLBACK_CHAIN = [m.strip() for m in _FALLBACK_RAW.split(",") if m.strip()]
+MODEL_CHAIN = [MODEL] + [m for m in FALLBACK_CHAIN if m != MODEL]
 PORT = int(os.environ.get("PAM_PORT", "8765"))
 
 if not API_KEY:
@@ -154,7 +159,16 @@ def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
     ]
 
     tool_log: list[str] = []
-    model_used = MODEL
+    chain_idx = 0
+    model_used = MODEL_CHAIN[chain_idx]
+
+    def advance_chain() -> bool:
+        nonlocal chain_idx, model_used
+        if chain_idx + 1 < len(MODEL_CHAIN):
+            chain_idx += 1
+            model_used = MODEL_CHAIN[chain_idx]
+            return True
+        return False
 
     for _ in range(max_tool_iterations):
         try:
@@ -167,20 +181,18 @@ def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
         except Exception as e:
             err = str(e)
             if "429" in err or "rate" in err.lower():
-                if model_used != FALLBACK:
-                    tool_log.append(f"rate-limited on {model_used}, switching to {FALLBACK}")
-                    model_used = FALLBACK
+                if advance_chain():
+                    tool_log.append(f"rate-limited, switching to {model_used}")
                     continue
             return {"reply": f"[error] {err[:300]}", "tool_log": tool_log}
 
         if not getattr(resp, "choices", None):
             err_obj = getattr(resp, "error", None) or getattr(resp, "model_extra", {}).get("error")
             err = str(err_obj) if err_obj else "upstream returned no choices"
-            if model_used != FALLBACK:
-                tool_log.append(f"empty response from {model_used} ({err[:80]}), switching to {FALLBACK}")
-                model_used = FALLBACK
+            if advance_chain():
+                tool_log.append(f"empty response from previous model ({err[:80]}), switching to {model_used}")
                 continue
-            return {"reply": f"[upstream error] {err[:300]}", "tool_log": tool_log}
+            return {"reply": f"[upstream error] all models exhausted. last: {err[:240]}", "tool_log": tool_log}
 
         msg = resp.choices[0].message
         tool_calls = msg.tool_calls or []
