@@ -103,7 +103,10 @@ def build_system_prompt() -> str:
         "- When Glenn shares info (a deadline, a meeting, a number), figure out which file it belongs in "
         "and propose the change. Don't just acknowledge — propose.\n"
         "- Glenn can upload files (images, PDFs) via the chat UI. Uploaded files are saved to "
-        "PAM/uploads/. Use read_file() to read text files. For images, describe what you see.\n"
+        "PAM/uploads/. Use read_file() for text files. For images (.png/.jpg/.jpeg/.gif/.webp/.bmp), "
+        "the image bytes are auto-embedded into the user message — you can see them directly without "
+        "any tool call. Just describe what you see. Note: not every model in the fallback chain "
+        "supports vision — if you cannot see an attached image, say so plainly.\n"
         "- Use `fetch_url(url)` when Glenn asks you to look at a website, GitHub repo, blog post, "
         "or any public web page. LinkedIn profiles are login-gated — fetch_url will only see the "
         "login wall, not the profile content. Say so if Glenn asks for a LinkedIn URL.\n"
@@ -148,9 +151,48 @@ def serializable_tool_calls(tool_calls) -> list[dict]:
     ]
 
 
+_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "bmp"}
+
+
+def build_user_content(user_text: str) -> str | list:
+    """If the user message references uploads/<image>, embed those images as
+    content blocks so vision-capable models can see them. Otherwise return text.
+    """
+    import base64
+    import re
+
+    matches = re.findall(r"uploads/[\w\-. ]+\.(?:png|jpg|jpeg|gif|webp|bmp)", user_text, re.IGNORECASE)
+    if not matches:
+        return user_text
+    blocks: list[dict] = [{"type": "text", "text": user_text}]
+    attached = 0
+    for rel in matches:
+        if attached >= 3:
+            break
+        full = PAM_ROOT / rel
+        if not full.exists() or not full.is_file():
+            continue
+        ext = full.suffix.lstrip(".").lower()
+        if ext not in _IMAGE_EXTS:
+            continue
+        mime = "jpeg" if ext == "jpg" else ext
+        try:
+            data = base64.b64encode(full.read_bytes()).decode("ascii")
+        except Exception:
+            continue
+        blocks.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/{mime};base64,{data}"},
+        })
+        attached += 1
+    return blocks if attached > 0 else user_text
+
+
 def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
     history = load_history()
-    history.append({"role": "user", "content": user_text})
+    user_content = build_user_content(user_text)
+    history.append({"role": "user", "content": user_content})
+    # Persist only text in history.jsonl so the file doesn't bloat with base64.
     append_history({"role": "user", "content": user_text, "ts": time.time()})
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [
