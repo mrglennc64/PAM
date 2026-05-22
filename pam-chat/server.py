@@ -188,6 +188,22 @@ def build_user_content(user_text: str) -> str | list:
     return blocks if attached > 0 else user_text
 
 
+MAX_HISTORY_MESSAGES = int(os.environ.get("PAM_MAX_HISTORY", "30"))
+
+
+def trim_for_model(msgs: list[dict]) -> list[dict]:
+    """Keep system + last MAX_HISTORY_MESSAGES, but drop leading messages until the first
+    non-system message is role=user. This avoids orphaned tool messages or assistant
+    tool_calls without their paired tool responses, which the API rejects.
+    """
+    if len(msgs) <= MAX_HISTORY_MESSAGES + 1:
+        return msgs
+    system, tail = msgs[0], msgs[-MAX_HISTORY_MESSAGES:]
+    while tail and tail[0].get("role") != "user":
+        tail.pop(0)
+    return [system] + tail
+
+
 def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
     history = load_history()
     user_content = build_user_content(user_text)
@@ -199,6 +215,7 @@ def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
         {k: v for k, v in m.items() if k in ("role", "content", "tool_calls", "tool_call_id", "name")}
         for m in history
     ]
+    messages = trim_for_model(messages)
 
     tool_log: list[str] = []
     chain_idx = 0
