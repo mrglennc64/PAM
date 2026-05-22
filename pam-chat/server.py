@@ -239,10 +239,19 @@ def run_turn(user_text: str, max_tool_iterations: int = 8) -> dict:
             )
         except Exception as e:
             err = str(e)
-            if "429" in err or "rate" in err.lower():
-                if advance_chain():
-                    tool_log.append(f"rate-limited, switching to {model_used}")
-                    continue
+            err_l = err.lower()
+            retryable = (
+                "429" in err
+                or "rate" in err_l
+                or "expecting value" in err_l  # upstream returned non-JSON / HTML error page
+                or "jsondecodeerror" in err_l
+                or "502" in err
+                or "503" in err
+                or "504" in err
+            )
+            if retryable and advance_chain():
+                tool_log.append(f"upstream error ({err[:60]}), switching to {model_used}")
+                continue
             return {"reply": f"[error] {err[:300]}", "tool_log": tool_log}
 
         if not getattr(resp, "choices", None):
