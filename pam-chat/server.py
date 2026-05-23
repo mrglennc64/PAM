@@ -106,7 +106,10 @@ def build_system_prompt() -> str:
         "PAM/uploads/. Use read_file() for text files. For images (.png/.jpg/.jpeg/.gif/.webp/.bmp), "
         "the image bytes are auto-embedded into the user message — you can see them directly without "
         "any tool call. Just describe what you see. Note: not every model in the fallback chain "
-        "supports vision — if you cannot see an attached image, say so plainly.\n"
+        "supports vision — if you cannot see an attached image, say so plainly. "
+        "PDFs are auto-extracted to text and appended to the user message — you receive the text "
+        "inline, no tool call needed. If the extraction block says it was unavailable, the server "
+        "is missing pypdf; tell Glenn.\n"
         "- Use `fetch_url(url)` when Glenn asks you to look at a website, GitHub repo, blog post, "
         "or any public web page. LinkedIn profiles are login-gated — fetch_url will only see the "
         "login wall, not the profile content. Say so if Glenn asks for a LinkedIn URL.\n"
@@ -152,21 +155,56 @@ def serializable_tool_calls(tool_calls) -> list[dict]:
 
 
 _IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "bmp"}
+_PDF_TEXT_CAP = 50_000  # chars per PDF, to avoid context blowout
+
+
+def _extract_pdf_text(path: Path) -> str | None:
+    """Best-effort text extraction from a PDF. Returns None if pypdf isn't
+    installed or extraction fails. Caps output at _PDF_TEXT_CAP chars."""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return None
+    try:
+        reader = PdfReader(str(path))
+        chunks: list[str] = []
+        total = 0
+        for i, page in enumerate(reader.pages):
+            try:
+                t = page.extract_text() or ""
+            except Exception:
+                t = ""
+            if not t:
+                continue
+            chunks.append(f"--- page {i+1} ---\n{t}")
+            total += len(t)
+            if total >= _PDF_TEXT_CAP:
+                chunks.append(f"\n[truncated at {_PDF_TEXT_CAP} chars]")
+                break
+        return "\n\n".join(chunks).strip() or None
+    except Exception:
+        return None
 
 
 def build_user_content(user_text: str) -> str | list:
-    """If the user message references uploads/<image>, embed those images as
-    content blocks so vision-capable models can see them. Otherwise return text.
+    """If the user message references uploads/<file>, attach those files to the
+    message so the model can see them:
+      - images → base64 image blocks (vision-capable models only)
+      - PDFs   → extracted text appended as a text block (works on any model)
+    Otherwise return plain text.
     """
     import base64
     import re
 
-    matches = re.findall(r"uploads/[\w\-. ]+\.(?:png|jpg|jpeg|gif|webp|bmp)", user_text, re.IGNORECASE)
-    if not matches:
+    img_matches = re.findall(r"uploads/[\w\-. ]+\.(?:png|jpg|jpeg|gif|webp|bmp)", user_text, re.IGNORECASE)
+    pdf_matches = re.findall(r"uploads/[\w\-. ]+\.pdf", user_text, re.IGNORECASE)
+    if not img_matches and not pdf_matches:
         return user_text
+
     blocks: list[dict] = [{"type": "text", "text": user_text}]
     attached = 0
-    for rel in matches:
+
+    for rel in img_matches:
         if attached >= 3:
             break
         full = PAM_ROOT / rel
@@ -185,6 +223,28 @@ def build_user_content(user_text: str) -> str | list:
             "image_url": {"url": f"data:image/{mime};base64,{data}"},
         })
         attached += 1
+
+    pdfs_attached = 0
+    for rel in pdf_matches:
+        if pdfs_attached >= 3:
+            break
+        full = PAM_ROOT / rel
+        if not full.exists() or not full.is_file():
+            continue
+        text = _extract_pdf_text(full)
+        if text is None:
+            blocks.append({
+                "type": "text",
+                "text": f"[Attached PDF {rel}: text extraction unavailable on this server.]",
+            })
+        else:
+            blocks.append({
+                "type": "text",
+                "text": f"[Attached PDF {rel} — extracted text below]\n\n{text}\n\n[end of {rel}]",
+            })
+        pdfs_attached += 1
+        attached += 1
+
     return blocks if attached > 0 else user_text
 
 
