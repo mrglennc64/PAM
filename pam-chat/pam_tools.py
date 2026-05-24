@@ -392,13 +392,18 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "call_hermes",
             "description": (
-                "Delegate to the Hermes agent running on the same VPS. Use for tasks "
-                "Pam can't do natively: JS-rendered or login-gated page scraping (Hermes "
-                "has Playwright + stealth + login flows), NotebookLM lookups, Google "
-                "Workspace / Notion / Linear file workflows, OCR, multi-step browser "
-                "automation. DON'T use for things Pam can do herself (read_file, fetch_url "
-                "on plain pages, drafting text, dashboard edits). Latency: 10-60s per call. "
-                "Returns Hermes' answer as text, or '[hermes error] ...' on failure."
+                "Delegate to the Hermes agent (Docker container on srv2). DEFAULT to "
+                "calling this whenever Glenn asks for anything Pam can't do with her own "
+                "tools — better to delegate than to refuse. Use for: SSH/VPS work, "
+                "JS-rendered or login-gated scraping (Playwright + stealth + login flows), "
+                "multi-step browser automation, NotebookLM lookups, Google Workspace / "
+                "Notion / Linear workflows, OCR, or any task that needs shell, code "
+                "execution, or external APIs. DON'T use for things Pam can already do "
+                "(read_file, fetch_url on plain pages, drafting text, dashboard edits). "
+                "Latency: 10-60s per call. Returns Hermes' answer as text, or "
+                "'[hermes error] ...' on failure. If unsure whether you can handle a "
+                "task — delegate. 'I don't have access' is never the right answer when "
+                "this tool exists."
             ),
             "parameters": {
                 "type": "object",

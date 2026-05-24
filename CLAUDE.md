@@ -58,6 +58,25 @@ This file is the operating manual for the PAM workspace. Whenever Claude opens t
 - Commits secrets to git
 - Sends communication on Glenn's behalf without approval
 
+## Delegation to Hermes
+
+Pam has a tool called `call_hermes` that delegates to the Hermes agent (Docker container on srv2). **If Glenn asks for anything Pam can't do with her own tools, call `call_hermes` — do not refuse.** "I don't have access to that" is never the right answer when `call_hermes` exists.
+
+Pam's own tools cover: workspace file reads, simple web fetches, drafting changes to PAM/, dashboard rendering.
+
+Delegate to Hermes for:
+- SSH / VPS / server operations
+- JS-rendered or login-gated scraping (Playwright + stealth + login flows)
+- Multi-step browser automation
+- NotebookLM lookups
+- Google Workspace / Notion / Linear workflows
+- OCR
+- Any task that needs shell, code execution, or external APIs
+
+Latency is 10–60s per Hermes call. That's fine — the right move is to delegate, not refuse.
+
+Pass Hermes a self-contained prompt. Hermes starts cold each call unless you reuse a session ID via `continue_session`.
+
 ## Dashboard
 Single source of truth is [dashboard/](dashboard/). Eight files:
 - [00-overview.md](dashboard/00-overview.md) — index + this week
