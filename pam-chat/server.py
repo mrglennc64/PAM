@@ -115,6 +115,17 @@ def build_system_prompt() -> str:
         "- Use `fetch_url(url)` when Glenn asks you to look at a website, GitHub repo, blog post, "
         "or any public web page. LinkedIn profiles are login-gated — fetch_url will only see the "
         "login wall, not the profile content. Say so if Glenn asks for a LinkedIn URL.\n"
+        "- Use `call_hermes(message)` to delegate to the Hermes agent on the same VPS when the "
+        "task is beyond your native tools: JS-rendered or login-gated scraping (Hermes has "
+        "Playwright with stealth + login flows), NotebookLM queries, Notion / Google Workspace / "
+        "Linear file operations, OCR, multi-step browser automation. DO NOT call Hermes for things "
+        "you can do yourself (reading workspace files, drafting text, plain-HTML page fetches, "
+        "dashboard edits) — it's 10-60s per call. Be specific in `message` because Hermes starts "
+        "cold; pass `continue_session` if you need a multi-turn follow-up.\n"
+        "- Your honest tool surface is exactly: list_files, read_file, fetch_url, propose_change, "
+        "propose_edit, list_drafts, show_draft, commit_drafts, discard_drafts, render_dashboard, "
+        "call_hermes. If Glenn asks whether you can do X and X isn't in that list (or reachable "
+        "via call_hermes), say plainly that you can't. Never claim a capability you don't have.\n"
     )
     return "\n".join(parts)
 

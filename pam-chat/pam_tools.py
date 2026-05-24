@@ -143,6 +143,43 @@ def fetch_url(url: str, max_chars: int = 8000) -> str:
     return "\n".join(parts)
 
 
+# ---------- delegation to Hermes ----------
+
+HERMES_CONTAINER = os.environ.get("HERMES_CONTAINER", "hermes-agent-flou-hermes-agent-1")
+HERMES_TIMEOUT = int(os.environ.get("HERMES_TIMEOUT", "180"))
+
+
+def call_hermes(message: str, continue_session: str | None = None) -> str:
+    """Delegate a task to the Hermes agent running in a sibling container.
+
+    Hermes has its own skill catalog — browser automation (Playwright/Camofox with
+    login support), NotebookLM MCP server, the `personal-operations-dashboard` PAM
+    skill, Google Workspace, Linear, Notion, OCR, and many more. Use this for things
+    Pam can't do natively: JS-rendered pages, login-gated scraping, file workflows
+    against Notion/Google Drive, multi-step automation chains.
+
+    Returns Hermes' stdout reply, or an error string starting with "[hermes ".
+    Latency is 10-60s per call (cold-spawn a Hermes process per request).
+    """
+    if not message or not message.strip():
+        return "[hermes error] empty message"
+    args = ["docker", "exec", "-u", "hermes", HERMES_CONTAINER, "hermes"]
+    if continue_session:
+        args += ["--continue", continue_session]
+    args += ["-z", message]
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=HERMES_TIMEOUT)
+    except FileNotFoundError:
+        return "[hermes error] docker CLI not available on this host"
+    except subprocess.TimeoutExpired:
+        return f"[hermes error] timed out after {HERMES_TIMEOUT}s"
+    if r.returncode != 0:
+        stderr = (r.stderr or "").strip()[:500]
+        return f"[hermes error] exit {r.returncode}: {stderr}"
+    out = (r.stdout or "").strip()
+    return out or "[hermes returned empty stdout]"
+
+
 # ---------- draft-by-default writes ----------
 
 def propose_change(path: str, content: str) -> str:
@@ -350,6 +387,35 @@ TOOL_SCHEMAS = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "call_hermes",
+            "description": (
+                "Delegate to the Hermes agent running on the same VPS. Use for tasks "
+                "Pam can't do natively: JS-rendered or login-gated page scraping (Hermes "
+                "has Playwright + stealth + login flows), NotebookLM lookups, Google "
+                "Workspace / Notion / Linear file workflows, OCR, multi-step browser "
+                "automation. DON'T use for things Pam can do herself (read_file, fetch_url "
+                "on plain pages, drafting text, dashboard edits). Latency: 10-60s per call. "
+                "Returns Hermes' answer as text, or '[hermes error] ...' on failure."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The full prompt/task to send to Hermes. Be specific — Hermes starts cold and has no prior context unless you pass continue_session.",
+                    },
+                    "continue_session": {
+                        "type": "string",
+                        "description": "Optional Hermes session ID to resume (multi-turn). Leave empty for a fresh session.",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
+    },
 ]
 
 DISPATCH = {
@@ -363,6 +429,7 @@ DISPATCH = {
     "commit_drafts": commit_drafts,
     "discard_drafts": discard_drafts,
     "render_dashboard": render_dashboard,
+    "call_hermes": call_hermes,
 }
 
 
