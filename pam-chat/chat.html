@@ -82,6 +82,12 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .upload-toast.show { display: flex; }
 .upload-toast .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--success);
   border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+.pending-bar { display: none; flex-wrap: wrap; gap: 6px; padding: 6px 20px 0 20px; }
+.pending-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel);
+  border: 1px solid var(--accent); border-radius: 16px; padding: 4px 10px; font-size: 12px; color: var(--text); }
+.pending-chip button { background: transparent; border: none; color: var(--muted); font-size: 16px;
+  cursor: pointer; padding: 0 0 0 4px; height: auto; line-height: 1; }
+.pending-chip button:hover { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -96,6 +102,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
       </div>
     </div>
     <div class="messages" id="messages"></div>
+    <div class="pending-bar" id="pending-bar"></div>
     <div class="composer">
       <button id="upload-btn" title="Upload file (image, PDF, document)">📎</button>
       <input type="file" id="file-input" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.pdf,.txt,.md,.json,.csv,.py,.js,.ts,.html,.css,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,image/*,application/pdf,text/*">
@@ -206,6 +213,30 @@ function hideToast() { uploadToast.classList.remove('show'); }
 
 // ---------- uploads ----------
 
+// Files Glenn uploaded but hasn't sent yet. Attached to the next chat message.
+const pendingAttachments = [];
+
+function renderPendingAttachments() {
+  const bar = document.getElementById('pending-bar');
+  if (!pendingAttachments.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = '';
+  for (const [i, att] of pendingAttachments.entries()) {
+    const chip = document.createElement('div');
+    chip.className = 'pending-chip';
+    const icon = document.createElement('span');
+    icon.textContent = att.isImage ? '🖼️' : '📄';
+    const label = document.createElement('span');
+    label.textContent = att.filename;
+    const x = document.createElement('button');
+    x.textContent = '×';
+    x.title = 'remove';
+    x.onclick = () => { pendingAttachments.splice(i, 1); renderPendingAttachments(); };
+    chip.appendChild(icon); chip.appendChild(label); chip.appendChild(x);
+    bar.appendChild(chip);
+  }
+}
+
 async function uploadFile(file) {
   showToast('Uploading ' + file.name + '…');
   const fd = new FormData();
@@ -215,19 +246,19 @@ async function uploadFile(file) {
     const data = await r.json();
     hideToast();
     if (data.ok) {
-      showToast('✓ ' + data.filename + ' uploaded');
+      showToast('✓ ' + data.filename + ' attached — type a message and send');
       setTimeout(hideToast, 3000);
       const isImage = /\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(file.name);
-      addMsg('user', 'Uploaded: ' + data.filename, {
-        isImage: isImage,
-        filePath: data.path,
+      pendingAttachments.push({
+        path: data.path,
         filename: data.filename,
+        savedAs: data.saved_as,
         size: data.size,
-        imageUrl: isImage ? '/uploads/' + data.saved_as : null,
+        isImage: isImage,
       });
-      sendToPam('I just uploaded a file: ' + data.path + ' (' + data.size + ' bytes). ' +
-        (isImage ? 'It is an image. Describe what you see.' : 'Read this file and tell me what it contains.'));
+      renderPendingAttachments();
       refreshUploads();
+      inputEl.focus();
     } else {
       showToast('✗ ' + (data.error || 'upload failed'));
       setTimeout(hideToast, 5000);
@@ -274,9 +305,20 @@ async function refreshUploads() {
       div.appendChild(info);
       const sb = document.createElement('button');
       sb.className = 'send-btn';
-      sb.textContent = '💬';
-      sb.title = 'Ask Pam about this file';
-      sb.onclick = () => sendToPam('Look at this file: ' + it.path + '. Read it and tell me what you see.');
+      sb.textContent = '📎';
+      sb.title = 'Attach this file to your next message';
+      sb.onclick = () => {
+        if (pendingAttachments.some(a => a.path === it.path)) return;
+        pendingAttachments.push({
+          path: it.path,
+          filename: it.name.split('_').slice(1).join('_') || it.name,
+          savedAs: it.name,
+          size: it.size,
+          isImage: isImage,
+        });
+        renderPendingAttachments();
+        inputEl.focus();
+      };
       div.appendChild(sb);
       uploadsListEl.appendChild(div);
     }
@@ -359,9 +401,57 @@ function sendToPam(text) {
 
 async function send() {
   const text = inputEl.value.trim();
-  if (!text) return;
+  if (!text && !pendingAttachments.length) return;
+  // Show what Glenn sees as one combined bubble: his text + thumbnails of attached files.
+  // What Pam sees: text plus "uploads/<path>" tokens so the server can embed images / PDFs.
+  let pamText = text;
+  if (pendingAttachments.length) {
+    const paths = pendingAttachments.map(a => a.path).join(' ');
+    pamText = (text ? text + '\n\n' : '') + '[attached: ' + paths + ']';
+  }
+  // UI bubble first
+  const first = pendingAttachments[0];
+  const extra = first ? {
+    isImage: first.isImage,
+    filePath: first.path,
+    filename: first.filename,
+    size: first.size,
+    imageUrl: first.isImage ? '/uploads/' + first.savedAs : null,
+  } : undefined;
+  addMsg('user', text || '(attachment only)', extra);
+  // Render any extra attachments beyond the first as additional chips on the same bubble
+  if (pendingAttachments.length > 1) {
+    const lastBubble = messagesEl.lastElementChild;
+    for (const a of pendingAttachments.slice(1)) {
+      const fa = document.createElement('div');
+      fa.className = 'file-attachment';
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = a.isImage ? '🖼️' : '📄';
+      const info = document.createElement('span');
+      info.textContent = a.filename + ' (' + formatSize(a.size) + ')';
+      fa.appendChild(icon); fa.appendChild(info);
+      lastBubble.appendChild(fa);
+    }
+  }
+  pendingAttachments.length = 0;
+  renderPendingAttachments();
   inputEl.value = '';
-  sendToPam(text);
+  setBusy(true);
+  fetch('/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: pamText }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    addMsg('pam', data.reply || '(no reply)');
+    appendToolLog(data.tool_log);
+    if (data.model) metaEl.textContent = data.model;
+    refreshDrafts();
+  })
+  .catch(e => { addMsg('pam', '[network error] ' + e.message); })
+  .finally(() => setBusy(false));
 }
 
 sendBtn.onclick = send;

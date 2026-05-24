@@ -103,13 +103,15 @@ def build_system_prompt() -> str:
         "- When Glenn shares info (a deadline, a meeting, a number), figure out which file it belongs in "
         "and propose the change. Don't just acknowledge — propose.\n"
         "- Glenn can upload files (images, PDFs) via the chat UI. Uploaded files are saved to "
-        "PAM/uploads/. Use read_file() for text files. For images (.png/.jpg/.jpeg/.gif/.webp/.bmp), "
-        "the image bytes are auto-embedded into the user message — you can see them directly without "
-        "any tool call. Just describe what you see. Note: not every model in the fallback chain "
-        "supports vision — if you cannot see an attached image, say so plainly. "
-        "PDFs are auto-extracted to text and appended to the user message — you receive the text "
-        "inline, no tool call needed. If the extraction block says it was unavailable, the server "
-        "is missing pypdf; tell Glenn.\n"
+        "PAM/uploads/. When Glenn attaches a file, his message will contain '[attached: uploads/<name>]'. "
+        "For images (.png/.jpg/.jpeg/.gif/.webp/.bmp) the image bytes are auto-embedded — you can see them "
+        "directly, no tool call needed. For PDFs the extracted text is appended inline. "
+        "DO NOT auto-describe or auto-summarize an attachment. If Glenn just attaches a file and asks "
+        "a specific question, answer the question using what you see. If he attaches a file with no "
+        "question, acknowledge it briefly ('got the screenshot' / 'got the PDF') and wait — do not "
+        "volunteer a description he didn't ask for. "
+        "If you cannot see an attached image (e.g. running on a non-vision model), say so plainly. "
+        "If a PDF block says extraction was unavailable, tell Glenn the server is missing pypdf.\n"
         "- Use `fetch_url(url)` when Glenn asks you to look at a website, GitHub repo, blog post, "
         "or any public web page. LinkedIn profiles are login-gated — fetch_url will only see the "
         "login wall, not the profile content. Say so if Glenn asks for a LinkedIn URL.\n"
@@ -196,8 +198,8 @@ def build_user_content(user_text: str) -> str | list:
     import base64
     import re
 
-    img_matches = re.findall(r"uploads/[\w\-. ]+\.(?:png|jpg|jpeg|gif|webp|bmp)", user_text, re.IGNORECASE)
-    pdf_matches = re.findall(r"uploads/[\w\-. ]+\.pdf", user_text, re.IGNORECASE)
+    img_matches = re.findall(r"uploads/[^\s\[\]<>\"']+\.(?:png|jpg|jpeg|gif|webp|bmp)", user_text, re.IGNORECASE)
+    pdf_matches = re.findall(r"uploads/[^\s\[\]<>\"']+\.pdf", user_text, re.IGNORECASE)
     if not img_matches and not pdf_matches:
         return user_text
 
@@ -473,15 +475,18 @@ def delete_upload(filename: str) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+_NO_CACHE = {"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"}
+
+
 @app.get("/")
 def root() -> FileResponse:
-    return FileResponse(HERE / "chat.html")
+    return FileResponse(HERE / "chat.html", headers=_NO_CACHE)
 
 
 @app.get("/dashboard")
 def dashboard() -> FileResponse:
     render_dashboard()
-    return FileResponse(PAM_ROOT / "dashboard.html")
+    return FileResponse(PAM_ROOT / "dashboard.html", headers=_NO_CACHE)
 
 
 if __name__ == "__main__":
