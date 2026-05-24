@@ -1,7 +1,7 @@
 # 02 — Platforms
 
 **Owner:** Aris → Platform Engineer (code) + Marketing (copy) + Ops Lead (status)
-**Last updated:** 2026-05-18
+**Last updated:** 2026-05-24
 
 ---
 
@@ -56,6 +56,35 @@ Reference data: [`PAM/samples/ai-agency-samples/reference/`](../samples/ai-agenc
 - [ ] Pricing (USD)
 - [ ] Marketing tasks (US channels — different from Nordic)
 - [ ] Creator-side metadata workflows
+
+---
+
+## Bounty Hunter
+**Code:** [`PAM/hunter/`](../hunter/) (cloned from github.com/mrglennc64/hunter on 2026-05-24)
+**Pitch (neutral):** Internal pipeline that surfaces unclaimed SoundExchange royalties from Billboard / YouTube chart tracks, then finds the rights-holder contact for outreach.
+**Status:** Code present locally, dependencies + API keys not yet installed.
+
+### Pipeline (Python)
+1. **Collect** — Billboard year-end + weekly + YouTube trending + remix / tier-2 / Atlanta collectors
+2. **Resolve** — ISRC via MusicBrainz, Deezer fallback, optional Spotify re-resolve
+3. **Enrich** — Chartmetric popularity filter (>60 = real cash)
+4. **Score** — Sniper score: indie label / remix / recent / tier-2 artist
+5. **Probe** — Stealth SoundExchange scrape (Playwright + residential proxies)
+6. **Outreach** — Hunter.io finds buyer email per UNCLAIMED / CONFLICT lead
+
+### What's left before first run
+- [ ] `pip install -r hunter/requirements.txt` (includes Playwright — also needs `playwright install chromium`)
+- [ ] Add `CHARTMETRIC_REFRESH_TOKEN`, `HUNTER_API_KEY`, `PROXIES` to `secrets/.env` (free-tier OK to start; see `hunter/.env.example`)
+- [ ] Decide where probe output (`hunter/data/leads.csv`) gets reviewed — Pam dashboard vs. separate sheet
+- [ ] First test run: `python hunter/run_pipeline.py --batch 50`
+
+### Web pieces (not yet wired)
+- `gap-finder-page.tsx`, `lead-intelligence-page.tsx` — React/TS dashboard components
+- `gap-finder-probe-route.ts`, `isrc-lookup-route.ts` — API route handlers (Next.js style)
+- These are loose files — no `package.json` in the repo, so they need a host (likely embedded into one of the existing platforms, or stood up as a separate Next app under `hunter/web/`)
+
+### Spec
+`hunter/_Bounty Hunter.pdf` is the original brief. Read this before changing pipeline logic.
 
 ---
 
